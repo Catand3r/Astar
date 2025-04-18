@@ -23,5 +23,8 @@
     <ClInclude Include="astar.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="astarSFML.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

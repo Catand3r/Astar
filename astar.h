@@ -116,6 +116,8 @@ class Pathfinder
         open_.push_back(node);
     }
 
+    inline static const Pos InvalidPos = {-1, -1};
+
     std::vector<Pos> Run()
     {
         while (!open_.empty())
