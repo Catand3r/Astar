@@ -118,62 +118,91 @@ class Pathfinder
 
     inline static const Pos InvalidPos = {-1, -1};
 
-    std::vector<Pos> Run()
+    bool Run()
     {
-        while (!open_.empty())
+        if (open_.empty())
+            return {};
+
+        Node q = open_.back();
+        open_.pop_back();
+        std::cout << "Node {" << q.pos_.x_ << ", " << q.pos_.y_ << "} start processing; parentNode {" << q.parentPos_.x_
+                  << ", " << q.parentPos_.y_ << "}\n";
+
+        auto steps = {Pos(0, -1), Pos(1, 1), Pos(1, 0), Pos(1, -1), Pos(0, 1), Pos(-1, -1), Pos(-1, 0), Pos(-1, 1)};
+        for (auto pos : steps)
         {
-            Node q = open_.back();
-            open_.pop_back();
-            std::cout << "Node {" << q.pos_.x_ << ", " << q.pos_.y_ << "} start processing; parentNode {"
-                      << q.parentPos_.x_ << ", " << q.parentPos_.y_ << "}\n";
+            Pos nodePos(q.pos_ + pos);
 
-            auto steps = {Pos(0, -1), Pos(1, 1), Pos(1, 0), Pos(1, -1), Pos(0, 1), Pos(-1, -1), Pos(-1, 0), Pos(-1, 1)};
-            for (auto pos : steps)
+            if (!nodePos.isValid(forbiddenPos_, board_.size(), board_[0].size()))
+                continue;
+            if (nodePos == endPos_)
             {
-                Pos nodePos(q.pos_ + pos);
+                Node currentNode(&q, nodePos, endPos_);
 
-                if (!nodePos.isValid(forbiddenPos_, board_.size(), board_[0].size()))
-                    continue;
-                if (nodePos == endPos_)
+                path_.push_back(endPos_);
+
+                while (currentNode.pos_ != startPos_)
                 {
-                    Node currentNode(&q, nodePos, endPos_);
-
-                    path_.push_back(endPos_);
-
-                    while (currentNode.pos_ != startPos_)
-                    {
-                        auto [parentX, parentY] = currentNode.parentPos_;
-                        currentNode = board_[parentX][parentY];
-                        path_.push_back(currentNode.pos_);
-                    }
-
-                    for (const auto &elem : path_)
-                    {
-                        std::cout << "Path {" << elem.x_ << ", " << elem.y_ << "}\n";
-                    }
-                    return path_;
-                }
-                Node successor(&q, nodePos, endPos_);
-
-                if (shouldSkipSuccessor(open_, successor) || shouldSkipSuccessor(closed_, successor))
-                {
-                    std::cout << "Node {" << successor.pos_.x_ << ", " << successor.pos_.y_ << "} will be reject\n";
-                    continue;
+                    auto [parentX, parentY] = currentNode.parentPos_;
+                    currentNode = board_[parentX][parentY];
+                    path_.push_back(currentNode.pos_);
                 }
 
-                board_[nodePos.x_][nodePos.y_] = successor;
+                for (const auto &elem : path_)
+                {
+                    std::cout << "Path {" << elem.x_ << ", " << elem.y_ << "}\n";
+                }
+                return true;
+            }
+            Node successor(&q, nodePos, endPos_);
 
-                std::cout << "Node {" << successor.pos_.x_ << ", " << successor.pos_.y_ << "} will be push back\n";
-                open_.push_back(successor);
+            if (shouldSkipSuccessor(open_, successor) || shouldSkipSuccessor(closed_, successor))
+            {
+                std::cout << "Node {" << successor.pos_.x_ << ", " << successor.pos_.y_ << "} will be reject\n";
+                continue;
             }
 
-            std::sort(open_.begin(), open_.end(),
-                      [](const Node &node1, const Node &node2) { return node1.f > node2.f; });
+            board_[nodePos.x_][nodePos.y_] = successor;
 
-            closed_.push_back(q);
+            std::cout << "Node {" << successor.pos_.x_ << ", " << successor.pos_.y_ << "} will be push back\n";
+            open_.push_back(successor);
         }
-        std::cout << "Nie znaleziono sciezki do celu\n";
-        return {};
+
+        std::sort(open_.begin(), open_.end(), [](const Node &node1, const Node &node2) { return node1.f > node2.f; });
+
+        closed_.push_back(q);
+
+        return false;
+
+        // std::cout << "Nie znaleziono sciezki do celu\n";
+        // return {};
+    }
+
+    std::vector<Pos> GetClosedList() const
+    {
+        std::vector<Pos> closedList;
+
+        for (const auto &elem : closed_)
+        {
+            closedList.push_back(elem.pos_);
+        }
+        return closedList;
+    }
+
+    std::vector<Pos> GetOpenList() const
+    {
+        std::vector<Pos> openList;
+
+        for (const auto &elem : open_)
+        {
+            openList.push_back(elem.pos_);
+        }
+        return openList;
+    }
+
+    const std::vector<Pos> &GetPath() const
+    {
+        return path_;
     }
 };
 

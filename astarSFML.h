@@ -7,6 +7,14 @@
 class GraphicPathfinder
 {
   private:
+    enum class States
+    {
+        input = 0,
+        calculating
+    };
+
+    States state_ = States::input;
+
     const int cellSize_ = 50;
 
     sf::RenderWindow window_;
@@ -18,6 +26,10 @@ class GraphicPathfinder
     Pathfinder::Pos endPos_ = Pathfinder::InvalidPos;
 
     std::vector<Pathfinder::Pos> forbiddenPos_;
+
+    Pathfinder *pathfinder_ = nullptr;
+
+    sf::Clock clock_;
 
     void updateBoard()
     {
@@ -31,7 +43,7 @@ class GraphicPathfinder
                 else if (pos == endPos_)
                     board_[x][y] = createCell(pos, sf::Color::Red);
                 else if (std::find(forbiddenPos_.begin(), forbiddenPos_.end(), pos) != forbiddenPos_.end())
-                    board_[x][y] = createCell(pos, sf::Color::Magenta);
+                    board_[x][y] = createCell(pos, sf::Color::Cyan);
                 else
                     board_[x][y] = createCell(pos, sf::Color::White);
             }
@@ -95,18 +107,40 @@ class GraphicPathfinder
         updateBoard();
     }
 
-    void calculatePath()
+    bool calculatePath()
     {
-        Pathfinder pathfinder(startPos_, endPos_, forbiddenPos_, board_.size(), board_[0].size());
-        std::vector<Pathfinder::Pos> path = pathfinder.Run();
+        bool reachDestination = pathfinder_->Run();
+        std::cout << "Is endPos reached: " << reachDestination << "\n";
 
-        for (auto [x, y] : path)
+        // std::mutex - blokada przed dostepem do zasobu wspolnego
+        if (reachDestination)
         {
-            if (Pathfinder::Pos{x, y} == startPos_ || Pathfinder::Pos{x, y} == endPos_)
-                continue;
-
-            board_[x][y].setFillColor(sf::Color::Blue);
+            auto &path = pathfinder_->GetPath();
+            for (const auto &[x, y] : path)
+            {
+                board_[x][y].setFillColor(sf::Color::Blue);
+            }
         }
+        else
+        {
+            auto open = pathfinder_->GetOpenList();
+            std::cout << "openList size = " << open.size() << '\n';
+            for (const auto &[x, y] : open)
+            {
+                board_[x][y].setFillColor(sf::Color::Magenta);
+            }
+
+            auto closed = pathfinder_->GetClosedList();
+            std::cout << "closedList size = " << closed.size() << '\n';
+            for (const auto &[x, y] : closed)
+            {
+                board_[x][y].setFillColor(sf::Color::Yellow);
+            }
+        }
+        board_[startPos_.x_][startPos_.y_].setFillColor(sf::Color::Green);
+        board_[endPos_.x_][endPos_.y_].setFillColor(sf::Color::Red);
+
+        return reachDestination;
     }
 
   public:
@@ -132,24 +166,42 @@ class GraphicPathfinder
             {
                 if (event->is<sf::Event::Closed>())
                     window_.close();
-                else if (event->is<sf::Event::KeyPressed>())
+                if (state_ == States::input)
                 {
-                    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::S))
-                        setStartPos(getSelectedCell());
-                    else if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::E))
-                        setEndPos(getSelectedCell());
-                    else if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Enter))
-                        calculatePath();
+                    if (event->is<sf::Event::KeyPressed>())
+                    {
+                        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::S))
+                            setStartPos(getSelectedCell());
+                        else if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::E))
+                            setEndPos(getSelectedCell());
+                        else if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Enter))
+                        {
+                            pathfinder_ =
+                                new Pathfinder(startPos_, endPos_, forbiddenPos_, board_.size(), board_[0].size());
+                            state_ = States::calculating;
+                        }
+                    }
+                    else if (event->is<sf::Event::MouseButtonPressed>())
+                    {
+                        if (sf::Mouse::isButtonPressed(sf::Mouse::Button::Right))
+                            editForbiddenPos(getSelectedCell());
+                    }
                 }
-                else if (event->is<sf::Event::MouseButtonPressed>())
+            }
+
+            if (state_ == States::calculating)
+            {
+                // run new thread with function calculatePath()
+                if (clock_.getElapsedTime() >= sf::milliseconds(500))
                 {
-                    if (sf::Mouse::isButtonPressed(sf::Mouse::Button::Right))
-                        editForbiddenPos(getSelectedCell());
+                    clock_.restart();
+                    if (calculatePath())
+                        state_ = States::input;
                 }
             }
 
             window_.clear(sf::Color::Black);
-
+            // std::mutex - blokada przed dostepem do zasobu wspolnego
             for (int i = 0; i < board_.size(); i++)
             {
                 for (auto &cell : board_[i])
