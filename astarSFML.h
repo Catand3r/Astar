@@ -2,6 +2,8 @@
 #include "SFML/Graphics.hpp"
 #include "astar.h"
 #include <algorithm>
+#include <mutex>
+#include <thread>
 #include <vector>
 
 class GraphicPathfinder
@@ -14,6 +16,12 @@ class GraphicPathfinder
     };
 
     States state_ = States::input;
+
+    std::thread calculateThread;
+
+    std::atomic_bool calculateThreadRunning = false;
+
+    std::mutex boardMutex_;
 
     const int cellSize_ = 50;
 
@@ -93,6 +101,12 @@ class GraphicPathfinder
         updateBoard();
     }
 
+    void setCellColor(Pathfinder::Pos pos, sf::Color color)
+    {
+        std::scoped_lock sl(boardMutex_);
+        board_[pos.x_][pos.y_].setFillColor(color);
+    }
+
     void editForbiddenPos(Pathfinder::Pos pos)
     {
         if (pos == Pathfinder::InvalidPos)
@@ -128,6 +142,7 @@ class GraphicPathfinder
             for (const auto &[x, y] : open)
             {
                 board_[x][y].setFillColor(sf::Color::Magenta);
+                // pathFinder.GetEstimatedDistance( x, y);
             }
 
             auto closed = pathfinder_->GetClosedList();
@@ -143,6 +158,46 @@ class GraphicPathfinder
         return reachDestination;
     }
 
+    bool calculatePath2()
+    {
+        // std::mutex - blokada przed dostepem do zasobu wspolnego
+        while (!pathfinder_->GetOpenList().empty())
+        {
+            sf::sleep(sf::milliseconds(500));
+            if (pathfinder_->Run())
+            {
+                auto &path = pathfinder_->GetPath();
+                for (const auto &[x, y] : path)
+                {
+                    setCellColor({x, y}, sf::Color::Blue);
+                }
+                calculateThreadRunning = false;
+                return true;
+            }
+            else
+            {
+                auto open = pathfinder_->GetOpenList();
+                std::cout << "openList size = " << open.size() << '\n';
+                for (const auto &[x, y] : open)
+                {
+                    setCellColor({x, y}, sf::Color::Magenta);
+                    // pathFinder.GetEstimatedDistance( x, y);
+                }
+
+                auto closed = pathfinder_->GetClosedList();
+                std::cout << "closedList size = " << closed.size() << '\n';
+                for (const auto &[x, y] : closed)
+                {
+                    setCellColor({x, y}, sf::Color::Yellow);
+                }
+            }
+            setCellColor({startPos_.x_, startPos_.y_}, sf::Color::Green);
+            setCellColor({endPos_.x_, endPos_.y_}, sf::Color::Red);
+        }
+        calculateThreadRunning = false;
+        return false;
+    }
+
   public:
     GraphicPathfinder(int boardSizeX, int boardSizeY)
         : window_(sf::VideoMode(sf::Vector2u{static_cast<unsigned int>(boardSizeX * cellSize_),
@@ -156,6 +211,12 @@ class GraphicPathfinder
         }
 
         updateBoard();
+    }
+
+    ~GraphicPathfinder()
+    {
+        if (calculateThread.joinable())
+            calculateThread.join();
     }
 
     void Draw()
@@ -179,6 +240,9 @@ class GraphicPathfinder
                             pathfinder_ =
                                 new Pathfinder(startPos_, endPos_, forbiddenPos_, board_.size(), board_[0].size());
                             state_ = States::calculating;
+
+                            calculateThread = std::thread(&GraphicPathfinder::calculatePath2, this);
+                            calculateThreadRunning = true;
                         }
                     }
                     else if (event->is<sf::Event::MouseButtonPressed>())
@@ -191,25 +255,24 @@ class GraphicPathfinder
 
             if (state_ == States::calculating)
             {
-                // run new thread with function calculatePath()
-                if (clock_.getElapsedTime() >= sf::milliseconds(500))
-                {
-                    clock_.restart();
-                    if (calculatePath())
-                        state_ = States::input;
-                }
+                if (!calculateThreadRunning)
+                    state_ = States::input;
             }
 
             window_.clear(sf::Color::Black);
-            // std::mutex - blokada przed dostepem do zasobu wspolnego
-            for (int i = 0; i < board_.size(); i++)
-            {
-                for (auto &cell : board_[i])
-                {
-                    window_.draw(cell);
-                }
-            }
 
+            {
+                // pocz¹tek sekcji krytycznej
+                std::scoped_lock sl(boardMutex_);
+                for (int i = 0; i < board_.size(); i++)
+                {
+                    for (auto &cell : board_[i])
+                    {
+                        window_.draw(cell);
+                    }
+                }
+                // koniec sekcji krytycznej
+            }
             window_.display();
         }
     }

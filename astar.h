@@ -207,8 +207,5 @@ class Pathfinder
 };
 
 /*
-
-AstarSFML rysuje co sekunde ktore pole jest procesowane (pojedyncze przejscie run, zapisywanie stanu w memberach).
-Na koncu rysuje sciezke innym kolorem.
-
+drukowanie odleglosci do endposa na cellach (f)
 */
