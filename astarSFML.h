@@ -2,6 +2,7 @@
 #include "SFML/Graphics.hpp"
 #include "astar.h"
 #include <algorithm>
+#include <future>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -17,9 +18,9 @@ class GraphicPathfinder
 
     States state_ = States::input;
 
-    std::thread calculateThread;
+    std::future<std::vector<Pathfinder::Pos>> calculateTask;
 
-    std::atomic_bool calculateThreadRunning = false;
+    std::atomic_bool abort_ = false;
 
     std::mutex boardMutex_;
 
@@ -158,21 +159,16 @@ class GraphicPathfinder
         return reachDestination;
     }
 
-    bool calculatePath2()
+    std::vector<Pathfinder::Pos> calculatePathThread()
     {
         // std::mutex - blokada przed dostepem do zasobu wspolnego
-        while (!pathfinder_->GetOpenList().empty())
+        while (!pathfinder_->GetOpenList().empty() && !abort_)
         {
             sf::sleep(sf::milliseconds(500));
             if (pathfinder_->Run())
             {
                 auto &path = pathfinder_->GetPath();
-                for (const auto &[x, y] : path)
-                {
-                    setCellColor({x, y}, sf::Color::Blue);
-                }
-                calculateThreadRunning = false;
-                return true;
+                return path;
             }
             else
             {
@@ -194,8 +190,7 @@ class GraphicPathfinder
             setCellColor({startPos_.x_, startPos_.y_}, sf::Color::Green);
             setCellColor({endPos_.x_, endPos_.y_}, sf::Color::Red);
         }
-        calculateThreadRunning = false;
-        return false;
+        return {};
     }
 
   public:
@@ -213,12 +208,6 @@ class GraphicPathfinder
         updateBoard();
     }
 
-    ~GraphicPathfinder()
-    {
-        if (calculateThread.joinable())
-            calculateThread.join();
-    }
-
     void Draw()
     {
         while (window_.isOpen())
@@ -226,7 +215,14 @@ class GraphicPathfinder
             while (const std::optional event = window_.pollEvent())
             {
                 if (event->is<sf::Event::Closed>())
+                {
+                    abort_ = true;
+                    if (calculateTask.valid())
+                    {
+                        calculateTask.wait();
+                    }
                     window_.close();
+                }
                 if (state_ == States::input)
                 {
                     if (event->is<sf::Event::KeyPressed>())
@@ -240,9 +236,7 @@ class GraphicPathfinder
                             pathfinder_ =
                                 new Pathfinder(startPos_, endPos_, forbiddenPos_, board_.size(), board_[0].size());
                             state_ = States::calculating;
-
-                            calculateThread = std::thread(&GraphicPathfinder::calculatePath2, this);
-                            calculateThreadRunning = true;
+                            calculateTask = std::async(&GraphicPathfinder::calculatePathThread, this);
                         }
                     }
                     else if (event->is<sf::Event::MouseButtonPressed>())
@@ -255,8 +249,18 @@ class GraphicPathfinder
 
             if (state_ == States::calculating)
             {
-                if (!calculateThreadRunning)
-                    state_ = States::input;
+                if (calculateTask.valid())
+                {
+                    if (calculateTask.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
+                    {
+                        auto path = calculateTask.get();
+                        for (auto &[x, y] : path)
+                        {
+                            board_[x][y].setFillColor(sf::Color::Blue);
+                        }
+                        state_ = States::input;
+                    }
+                }
             }
 
             window_.clear(sf::Color::Black);
